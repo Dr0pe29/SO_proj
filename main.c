@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-//testd
+
 #include "constants.h"
 #include "operations.h"
 #include "parser.h"
