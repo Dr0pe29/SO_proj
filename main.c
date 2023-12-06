@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Failed to initialize EMS\n");
     return 1;
   }
-
+  
   while (1) {
     unsigned int event_id, delay;
     size_t num_rows, num_columns, num_coords;
