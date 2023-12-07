@@ -39,7 +39,10 @@ int main(int argc, char *argv[]) {
       return 1;
   }
   while((dp = readdir(dirp)) != NULL){
-    int fd, isDone = 0;
+    int fd, outputFd, openFlags, isDone = 0;
+    mode_t filePerms;
+    openFlags = O_CREAT | O_WRONLY | O_TRUNC;
+    filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH; 
 
     if (strstr(dp->d_name, ".job") == NULL) continue;
 
@@ -47,10 +50,17 @@ int main(int argc, char *argv[]) {
     strcpy(jobsPath, argv[2]);
     strcat(jobsPath, "/");
     strcat(jobsPath ,dp->d_name);
-    fd = open(jobsPath, O_RDONLY);
+
+    fd = open(jobsPath, O_RDONLY); //open input file
+
+    strcpy(jobsPath + strlen(jobsPath) - strlen(".jobs"), ".out");
+
+    outputFd = open(jobsPath/*alterar nome para .out*/, openFlags, filePerms);
+
     if (fd == -1){
       fprintf(stderr, "Error opening file %s\n", dp->d_name);
     }
+
     while (!isDone) {
       unsigned int event_id, delay;
       size_t num_rows, num_columns, num_coords;
@@ -89,14 +99,14 @@ int main(int argc, char *argv[]) {
             continue;
           }
 
-          if (ems_show(event_id)) {
+          if (ems_show(event_id, outputFd)) {
             fprintf(stderr, "Failed to show event\n");
           }
 
           break;
 
         case CMD_LIST_EVENTS:
-          if (ems_list_events()) {
+          if (ems_list_events(outputFd)) {
             fprintf(stderr, "Failed to list events\n");
           }
 
@@ -137,7 +147,7 @@ int main(int argc, char *argv[]) {
           break;
 
         case EOC:
-          if (close(fd) == -1)
+          if (close(fd) == -1 || close(outputFd) == -1)
             fprintf(stderr, "Error closing file %s\n", dp->d_name);
           isDone = 1;
           break;

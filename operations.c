@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
+#include <string.h>
 
 #include "eventlist.h"
 
@@ -156,7 +158,7 @@ int ems_reserve(unsigned int event_id, size_t num_seats, size_t* xs, size_t* ys)
   return 0;
 }
 
-int ems_show(unsigned int event_id) {
+int ems_show(unsigned int event_id, int fd) {
   if (event_list == NULL) {
     fprintf(stderr, "EMS state must be initialized\n");
     return 1;
@@ -172,20 +174,25 @@ int ems_show(unsigned int event_id) {
   for (size_t i = 1; i <= event->rows; i++) {
     for (size_t j = 1; j <= event->cols; j++) {
       unsigned int* seat = get_seat_with_delay(event, seat_index(event, i, j));
-      printf("%u", *seat);
-
+      char* seatChar = (char *)malloc(sizeof(seat));
+      sprintf(seatChar, "%u", *seat);
+      if (write(fd, seatChar , strlen(seatChar)) < 0){
+        fprintf(stderr, "Couldn't write the whole buffer");
+        free(seatChar);
+        return 1;
+      }
+      free(seatChar);
       if (j < event->cols) {
-        printf(" ");
+        write(fd, " " , sizeof(char));
       }
     }
-
-    printf("\n");
+    write(fd, "\n" , sizeof(char));
   }
 
   return 0;
 }
 
-int ems_list_events() {
+int ems_list_events(int fd) {
   if (event_list == NULL) {
     fprintf(stderr, "EMS state must be initialized\n");
     return 1;
@@ -198,10 +205,13 @@ int ems_list_events() {
 
   struct ListNode* current = event_list->head;
   while (current != NULL) {
-    printf("Event: ");
-    printf("%u\n", (current->event)->id);
+    write(fd, "Event: ", strlen("Event: "));
+    char* eventID = (char *)malloc(sizeof((current->event)->id));
+    sprintf(eventID, "%u \n", (current->event)->id);
+    write(fd, eventID, strlen(eventID));
     current = current->next;
-  }
+    free(eventID);
+  } 
 
   return 0;
 }
