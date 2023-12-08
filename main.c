@@ -7,10 +7,16 @@
 #include <fcntl.h> 
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <pthread.h>
 
 #include "constants.h"
 #include "operations.h"
 #include "parser.h"
+
+typedef struct {
+    char *jobPath;
+    int threadId;
+} ThreadData;
 
 int main(int argc, char *argv[]) {
   unsigned int state_access_delay_ms = STATE_ACCESS_DELAY_MS;
@@ -176,6 +182,11 @@ int main(int argc, char *argv[]) {
       if (active_process >= MAX_PROC){
         int s;
         wait(&s);
+        if (WIFEXITED(s)) {
+            printf("Child process exited normally with status: %d\n", WEXITSTATUS(s));
+        } else {
+            printf("Child process did not exit normally.\n");
+        }
         active_process --;
       }
     }
@@ -185,6 +196,11 @@ int main(int argc, char *argv[]) {
   while (active_process > 0){
     int s;
     wait(&s);
+    if (WIFEXITED(s)) {
+            printf("Child process exited normally with status: %d\n", WEXITSTATUS(s));
+    } else {
+            printf("Child process did not exit normally.\n");
+    }
     active_process --;
   }
   
