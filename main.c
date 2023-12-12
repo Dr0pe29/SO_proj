@@ -11,12 +11,7 @@
 
 #include "constants.h"
 #include "operations.h"
-#include "parser.h"
-
-typedef struct {
-    char *jobPath;
-    int threadId;
-} ThreadData;
+/*#include "parser.h"*/
 
 int main(int argc, char *argv[]) {
   unsigned int state_access_delay_ms = STATE_ACCESS_DELAY_MS;
@@ -53,7 +48,7 @@ int main(int argc, char *argv[]) {
       return 1;
   }
   while((dp = readdir(dirp)) != NULL){
-    int fd, outputFd, openFlags, isDone = 0;
+    int fd, outputFd, openFlags/*, isDone = 0;*/;
     mode_t filePerms;
     openFlags = O_CREAT | O_WRONLY | O_TRUNC;
     filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH; 
@@ -82,7 +77,8 @@ int main(int argc, char *argv[]) {
       if (fd == -1){
         fprintf(stderr, "Error opening file %s\n", dp->d_name);
       }
-
+      ems_read_command(fd, outputFd);
+      /*
       while (!isDone) {
         unsigned int event_id, delay;
         size_t num_rows, num_columns, num_coords;
@@ -174,7 +170,7 @@ int main(int argc, char *argv[]) {
             isDone = 1;
             break;
         }  
-      }
+      }*/
       exit(EXIT_SUCCESS);
     } 
     else {
