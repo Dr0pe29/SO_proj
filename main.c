@@ -7,46 +7,56 @@
 #include <fcntl.h> 
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/types.h>
 #include <pthread.h>
 
 #include "constants.h"
 #include "operations.h"
 #include "parser.h"
 
+//Global Variables
 pthread_mutex_t trinco = PTHREAD_MUTEX_INITIALIZER;
-int isFileClosed = 0;
+pthread_rwlock_t trinco_rw = PTHREAD_RWLOCK_INITIALIZER; 
+int barrier_found = 0;
 unsigned int* waitlist;
 
 typedef struct {
     int input_fd;
     int output_fd;
     int tid;
+    long int max_threads;
     unsigned int* wait;
 } command_args_t;
 
 
 void *ems_read_command(void *arg){
-  command_args_t const *args = (command_args_t const *)arg;
+  command_args_t  *args = (command_args_t *)arg;
   
-  isFileClosed = 0; //ESTA LINHA É DO DEMONIO, NAO SEI COMO EVITAR DATA RACES
+  int isFileClosed = 0;
  
-  while (!isFileClosed) {
+  while (1) {
     unsigned int event_id, delay, thread_id = 0;
     size_t num_rows, num_columns, num_coords;
     size_t xs[MAX_RESERVATION_SIZE], ys[MAX_RESERVATION_SIZE];
 
     pthread_mutex_lock(&trinco);
     if (isFileClosed) {
-        pthread_mutex_unlock(&trinco);
-        break;
+      pthread_mutex_unlock(&trinco);
+      break;
     }
+    if (barrier_found){
+      //printf("sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
+      pthread_mutex_unlock(&trinco);
+      return (void*) 1;
+    }
+    pthread_mutex_unlock(&trinco);
+
     //printf("sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
-    if(args->wait[args->tid] != 0){
-      printf("entrei e sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
+    if(args->wait[args->tid] > 0){
+      //printf("entrei e sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
       ems_wait(args->wait[args->tid]);
       args->wait[args->tid] = 0;
     }
-    pthread_mutex_unlock(&trinco);
     pthread_mutex_lock(&trinco);
     enum Command next_command = get_next(args->input_fd);
     pthread_mutex_unlock(&trinco);
@@ -57,21 +67,21 @@ void *ems_read_command(void *arg){
         pthread_mutex_lock(&trinco);
         if (parse_create(args->input_fd, &event_id, &num_rows, &num_columns) != 0) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
+          pthread_mutex_unlock(&trinco);
           continue;
         }
-
         if (ems_create(event_id, num_rows, num_columns)) {
           fprintf(stderr, "Failed to create event\n");
         }
         pthread_mutex_unlock(&trinco);
         break;
-
+        
       case CMD_RESERVE:
         pthread_mutex_lock(&trinco);
         num_coords = parse_reserve(args->input_fd, MAX_RESERVATION_SIZE, &event_id, xs, ys);
-
         if (num_coords == 0) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
+          pthread_mutex_unlock(&trinco);
           continue;
         }
 
@@ -85,9 +95,9 @@ void *ems_read_command(void *arg){
         pthread_mutex_lock(&trinco);
         if (parse_show(args->input_fd, &event_id) != 0) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
+          pthread_mutex_unlock(&trinco);
           continue;
         }
-
         if (ems_show(event_id, args->output_fd)) {
           fprintf(stderr, "Failed to show event\n");
         }
@@ -106,24 +116,28 @@ void *ems_read_command(void *arg){
         pthread_mutex_lock(&trinco);
         if (parse_wait(args->input_fd, &delay, &thread_id) == -1) {  // thread_id is not implemented
           fprintf(stderr, "Invalid command. See HELP for usage\n");
+          pthread_mutex_unlock(&trinco);
           continue;
         }
         
         if(thread_id > 0){
           args->wait[thread_id] = delay;
-          printf("vou esperar %u na proxima %u\n", args->wait[thread_id], thread_id);
+          //printf("vou esperar %u na proxima %u\n", args->wait[thread_id], thread_id);
           pthread_mutex_unlock(&trinco);
           break;
         }
         if (delay > 0) {
           printf("Waiting...\n");
-          ems_wait(delay);
+          for(long int i = 1; i<=args->max_threads;i++){
+            args->wait[i] = delay;
+            //printf("vou esperar %u na proxima %lu\n", args->wait[i], i);
+          }
+            
         }
         pthread_mutex_unlock(&trinco);
         break;
 
       case CMD_INVALID:
-        printf("%d", next_command);
         fprintf(stderr, "Invalid command. See HELP for usage\n");
         break;
 
@@ -141,22 +155,21 @@ void *ems_read_command(void *arg){
         break;
 
       case CMD_BARRIER:  // Not implemented
+        pthread_mutex_lock(&trinco);
+        barrier_found = 1;
+        pthread_mutex_unlock(&trinco);
+        return (void*) 1;
       case CMD_EMPTY:
         break;
 
       case EOC:
         pthread_mutex_lock(&trinco);
-        if(isFileClosed){
-          break;
-        } 
-        if (close(args->input_fd) == -1 || close(args->output_fd) == -1)
-          fprintf(stderr, "Error closing file %lu \n", pthread_self());
         isFileClosed = 1;
         pthread_mutex_unlock(&trinco);
         break;
     }  
   }
-  return NULL;
+  return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -226,25 +239,36 @@ int main(int argc, char *argv[]) {
 
       command_args_t args[MAX_THREADS];
 
+      waitlist = (unsigned int*)calloc(MAX_THREADS_INT+1,sizeof(unsigned int));
       for(int i = 0; i < MAX_THREADS; i++){
-        waitlist = (unsigned int*)calloc(MAX_THREADS_INT+1,sizeof(unsigned int));
-        command_args_t command_args = {.input_fd = fd, .output_fd = outputFd,.tid = i+1, .wait = waitlist};
+        command_args_t command_args = {.input_fd = fd, .output_fd = outputFd,.tid = i+1,.max_threads = MAX_THREADS, .wait = waitlist};
         args[i] = command_args;
       }
       //waitlist = (unsigned int*)calloc(MAX_THREADS_INT+1,sizeof(unsigned int));
       
       //command_args_t command_args = {.input_fd = fd, .output_fd = outputFd, .wait = waitlist};
-      
-      for (int i = 0; i < MAX_THREADS; i++){
-        if(pthread_create(&tid[i], NULL,ems_read_command,(void *)&args[i]) != 0){
-          fprintf(stderr, "failed to create thread");
-          exit(EXIT_FAILURE);
+      int barrier_found_local = 1;
+      while(barrier_found_local){
+        barrier_found_local = 0;
+        for (int i = 0; i < MAX_THREADS; i++){
+          if(pthread_create(&tid[i], NULL,ems_read_command,(void *)&args[i]) != 0){
+            fprintf(stderr, "failed to create thread");
+            exit(EXIT_FAILURE);
+          }
         }
+        for (int i = 0; i < MAX_THREADS; ++i){
+          void* thread;
+          pthread_join(tid[i], &thread);   
+          if (thread == (void*) 1) {
+              barrier_found_local = 1;
+          }
+        }
+        /*printf("%d tenho barrier: %d\n",barrier_found_local, barrier_found);*/
+        barrier_found = 0;
       }
-
-      for (int i = 0; i < MAX_THREADS; ++i){
-        pthread_join(tid[i], NULL);
-      }
+      
+      if (close(args->input_fd) == -1 || close(args->output_fd) == -1)
+        fprintf(stderr, "Error closing file %lu \n", pthread_self());
       free(waitlist);
       exit(EXIT_SUCCESS);
     } 
