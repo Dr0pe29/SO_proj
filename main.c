@@ -16,7 +16,7 @@
 
 //Global Variables
 pthread_mutex_t trinco = PTHREAD_MUTEX_INITIALIZER;
-pthread_rwlock_t trinco_rw = PTHREAD_RWLOCK_INITIALIZER; 
+//pthread_rwlock_t trinco_rw = PTHREAD_RWLOCK_INITIALIZER; 
 int barrier_found = 0;
 unsigned int* waitlist;
 
@@ -40,6 +40,7 @@ void *ems_read_command(void *arg){
     size_t xs[MAX_RESERVATION_SIZE], ys[MAX_RESERVATION_SIZE];
 
     pthread_mutex_lock(&trinco);
+    delay = args->wait[args->tid];
     if (isFileClosed) {
       pthread_mutex_unlock(&trinco);
       break;
@@ -52,24 +53,24 @@ void *ems_read_command(void *arg){
     pthread_mutex_unlock(&trinco);
 
     //printf("sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
-    if(args->wait[args->tid] > 0){
-      //printf("entrei e sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
-      ems_wait(args->wait[args->tid]);
-      args->wait[args->tid] = 0;
+    if(delay > 0){
+      //printf("entrei e sou %u vou esperar %u\n", args->tid,delay);
+      ems_wait(delay);
+      delay = 0;
     }
     pthread_mutex_lock(&trinco);
+    args->wait[args->tid] = 0;
     enum Command next_command = get_next(args->input_fd);
     pthread_mutex_unlock(&trinco);
     
     
     switch (next_command){
       case CMD_CREATE:
-        pthread_mutex_lock(&trinco);
         if (parse_create(args->input_fd, &event_id, &num_rows, &num_columns) != 0) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
-          pthread_mutex_unlock(&trinco);
           continue;
         }
+        pthread_mutex_lock(&trinco);
         if (ems_create(event_id, num_rows, num_columns)) {
           fprintf(stderr, "Failed to create event\n");
         }
@@ -77,14 +78,12 @@ void *ems_read_command(void *arg){
         break;
         
       case CMD_RESERVE:
-        pthread_mutex_lock(&trinco);
         num_coords = parse_reserve(args->input_fd, MAX_RESERVATION_SIZE, &event_id, xs, ys);
         if (num_coords == 0) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
-          pthread_mutex_unlock(&trinco);
           continue;
         }
-
+        pthread_mutex_lock(&trinco);
         if (ems_reserve(event_id, num_coords, xs, ys)) {
           fprintf(stderr, "Failed to reserve seats\n");
         }
@@ -92,12 +91,11 @@ void *ems_read_command(void *arg){
         break;
 
       case CMD_SHOW:
-        pthread_mutex_lock(&trinco);
         if (parse_show(args->input_fd, &event_id) != 0) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
-          pthread_mutex_unlock(&trinco);
           continue;
         }
+        pthread_mutex_lock(&trinco);
         if (ems_show(event_id, args->output_fd)) {
           fprintf(stderr, "Failed to show event\n");
         }
@@ -113,13 +111,11 @@ void *ems_read_command(void *arg){
         break;
 
       case CMD_WAIT:
-        pthread_mutex_lock(&trinco);
         if (parse_wait(args->input_fd, &delay, &thread_id) == -1) {  // thread_id is not implemented
           fprintf(stderr, "Invalid command. See HELP for usage\n");
-          pthread_mutex_unlock(&trinco);
           continue;
         }
-        
+        pthread_mutex_lock(&trinco);
         if(thread_id > 0){
           args->wait[thread_id] = delay;
           //printf("vou esperar %u na proxima %u\n", args->wait[thread_id], thread_id);
@@ -175,8 +171,8 @@ void *ems_read_command(void *arg){
 int main(int argc, char *argv[]) {
   unsigned int state_access_delay_ms = STATE_ACCESS_DELAY_MS;
   char *endptr;
-  if (argc > 1) {
-    unsigned long int delay = strtoul(argv[1], &endptr, 10);
+  if (argc > 4) {
+    unsigned long int delay = strtoul(argv[4], &endptr, 10);
 
     if (*endptr != '\0' || delay > UINT_MAX) {
       fprintf(stderr, "Invalid delay value or value too large\n");
@@ -191,16 +187,16 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  long int MAX_PROC = strtol(argv[3], &endptr, 10);
+  long int MAX_PROC = strtol(argv[2], &endptr, 10);
 
-  long int MAX_THREADS = strtol(argv[4], &endptr, 10);
-  long unsigned int MAX_THREADS_INT = strtoul(argv[4], &endptr, 10);
+  long int MAX_THREADS = strtol(argv[3], &endptr, 10);
+  long unsigned int MAX_THREADS_INT = strtoul(argv[3], &endptr, 10);
 
   int active_process = 0;
 
   DIR *dirp;
   struct dirent *dp ;
-  dirp = opendir(argv[2]);
+  dirp = opendir(argv[1]);
   if (dirp == NULL) {
       fprintf(stderr,"Opendir failed\n");
       return 1;
@@ -215,8 +211,8 @@ int main(int argc, char *argv[]) {
 
     if (strstr(dp->d_name, ".job") == NULL) continue;
 
-    char* jobsPath = (char *)malloc(strlen(argv[2]) + strlen(dp->d_name) + 3);
-    strcpy(jobsPath, argv[2]);
+    char* jobsPath = (char *)malloc(strlen(argv[1]) + strlen(dp->d_name) + 3);
+    strcpy(jobsPath, argv[1]);
     strcat(jobsPath, "/");
     strcat(jobsPath ,dp->d_name);
 
