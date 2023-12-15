@@ -110,14 +110,16 @@ int ems_create(unsigned int event_id, size_t num_rows, size_t num_cols) {
   for (size_t i = 0; i < num_rows * num_cols; i++) {
     event->data[i] = 0;
   }
-  
+  pthread_mutex_lock(&list_lock);
   if (append_to_list(event_list, event) != 0) {
     fprintf(stderr, "Error appending event to list\n");
     free(event->data);
     free(event);
+    pthread_mutex_unlock(&list_lock);
     pthread_mutex_unlock(&global_lock);
     return 1;
   }
+  pthread_mutex_unlock(&list_lock);
   pthread_mutex_unlock(&global_lock);
   return 0;
 }
@@ -213,11 +215,12 @@ int ems_list_events(int fd) {
   pthread_mutex_lock(&list_lock);
   if (event_list->head == NULL) {
     printf("No events\n");
+    pthread_mutex_unlock(&list_lock);
     return 0;
   }
   pthread_mutex_unlock(&list_lock);
-
   struct ListNode* current = event_list->head;
+
   pthread_mutex_lock(&output_lock);
   while (current != NULL) {
     write(fd, "Event: ", strlen("Event: "));
@@ -226,7 +229,9 @@ int ems_list_events(int fd) {
     sprintf(eventID, "%u \n", (current->event)->id);
     pthread_mutex_unlock(&(current->event)->event_lock);
     write(fd, eventID, strlen(eventID));
+    pthread_mutex_lock(&list_lock);
     current = current->next;
+    pthread_mutex_unlock(&list_lock);
     free(eventID);
   } 
   pthread_mutex_unlock(&output_lock);

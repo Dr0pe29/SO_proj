@@ -155,6 +155,7 @@ void *ems_read_command(void *arg){
         pthread_mutex_unlock(&read_file);
         return (void*) 1; // Return a special value (1) to signal the barrier
       case CMD_EMPTY:
+        pthread_mutex_unlock(&read_file);
         break;
 
       case EOC:
