@@ -70,11 +70,10 @@ void *ems_read_command(void *arg){
           continue;
         }
         pthread_mutex_unlock(&read_file);
-        pthread_mutex_lock(&read_file);
+        
         if (ems_create(event_id, num_rows, num_columns)) {
           fprintf(stderr, "Failed to create event\n");
         }
-        pthread_mutex_unlock(&read_file);
         break;
         
       case CMD_RESERVE:
@@ -84,11 +83,9 @@ void *ems_read_command(void *arg){
           continue;
         }
         pthread_mutex_unlock(&read_file);
-        pthread_mutex_lock(&read_file);
         if (ems_reserve(event_id, num_coords, xs, ys)) {
           fprintf(stderr, "Failed to reserve seats\n");
         }
-        pthread_mutex_unlock(&read_file);
         break;
 
       case CMD_SHOW:
@@ -97,20 +94,16 @@ void *ems_read_command(void *arg){
           continue;
         }
         pthread_mutex_unlock(&read_file);
-        pthread_mutex_lock(&read_file);
         if (ems_show(event_id, args->output_fd)) {
           fprintf(stderr, "Failed to show event\n");
         }
-        pthread_mutex_unlock(&read_file);
         break;
 
       case CMD_LIST_EVENTS:
         pthread_mutex_unlock(&read_file);
-        pthread_mutex_lock(&read_file);
         if (ems_list_events(args->output_fd)) {
           fprintf(stderr, "Failed to list events\n");
         }
-        pthread_mutex_unlock(&read_file);
         break;
 
       case CMD_WAIT:
