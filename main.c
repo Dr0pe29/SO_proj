@@ -15,7 +15,11 @@
 #include "parser.h"
 
 //Global Variables
-pthread_mutex_t trinco = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t read_file = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t barrier = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t waitlist_mut = PTHREAD_MUTEX_INITIALIZER;
+
+
 // This variable is a flag indicating whether a barrier has been found.
 int barrier_found = 0; 
 // This is an array used to store wait times for individual threads.
@@ -35,32 +39,29 @@ void *ems_read_command(void *arg){
   
   int isFileClosed = 0;
  
-  while (1) {
+  while (!isFileClosed) {
     unsigned int event_id, delay, thread_id = 0;
     size_t num_rows, num_columns, num_coords;
     size_t xs[MAX_RESERVATION_SIZE], ys[MAX_RESERVATION_SIZE];
 
-    pthread_mutex_lock(&trinco);
+    pthread_mutex_lock(&waitlist_mut);
     delay = args->wait[args->tid];
-    if (isFileClosed) {
-      pthread_mutex_unlock(&trinco);
-      break;
-    }
-    if (barrier_found){
-      pthread_mutex_unlock(&trinco);
-      return (void*) 1; // Return a special value (1) to signal the barrier
-    }
-    pthread_mutex_unlock(&trinco);
-
+    pthread_mutex_unlock(&waitlist_mut);
     if(delay > 0){
       ems_wait(delay);
       delay = 0;
     }
-    pthread_mutex_lock(&trinco);
+    pthread_mutex_lock(&waitlist_mut);
     args->wait[args->tid] = 0;
+    pthread_mutex_unlock(&waitlist_mut);
+
+    pthread_mutex_lock(&read_file);   
+
+    if (barrier_found){
+      pthread_mutex_unlock(&read_file);
+      return (void*) 1; // Return a special value (1) to signal the barrier
+    }
     enum Command next_command = get_next(args->input_fd);
-    pthread_mutex_unlock(&trinco);
-    
     
     switch (next_command){
       case CMD_CREATE:
@@ -68,11 +69,12 @@ void *ems_read_command(void *arg){
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-        pthread_mutex_lock(&trinco);
+        pthread_mutex_unlock(&read_file);
+        pthread_mutex_lock(&read_file);
         if (ems_create(event_id, num_rows, num_columns)) {
           fprintf(stderr, "Failed to create event\n");
         }
-        pthread_mutex_unlock(&trinco);
+        pthread_mutex_unlock(&read_file);
         break;
         
       case CMD_RESERVE:
@@ -81,11 +83,12 @@ void *ems_read_command(void *arg){
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-        pthread_mutex_lock(&trinco);
+        pthread_mutex_unlock(&read_file);
+        pthread_mutex_lock(&read_file);
         if (ems_reserve(event_id, num_coords, xs, ys)) {
           fprintf(stderr, "Failed to reserve seats\n");
         }
-        pthread_mutex_unlock(&trinco);
+        pthread_mutex_unlock(&read_file);
         break;
 
       case CMD_SHOW:
@@ -93,47 +96,53 @@ void *ems_read_command(void *arg){
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-        pthread_mutex_lock(&trinco);
+        pthread_mutex_unlock(&read_file);
+        pthread_mutex_lock(&read_file);
         if (ems_show(event_id, args->output_fd)) {
           fprintf(stderr, "Failed to show event\n");
         }
-        pthread_mutex_unlock(&trinco);
+        pthread_mutex_unlock(&read_file);
         break;
 
       case CMD_LIST_EVENTS:
-        pthread_mutex_lock(&trinco);
+        pthread_mutex_unlock(&read_file);
+        pthread_mutex_lock(&read_file);
         if (ems_list_events(args->output_fd)) {
           fprintf(stderr, "Failed to list events\n");
         }
-        pthread_mutex_unlock(&trinco);
+        pthread_mutex_unlock(&read_file);
         break;
 
       case CMD_WAIT:
+        pthread_mutex_unlock(&read_file);
         if (parse_wait(args->input_fd, &delay, &thread_id) == -1) { 
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-        pthread_mutex_lock(&trinco);
+        pthread_mutex_lock(&read_file);
         if(thread_id > 0){ 
           args->wait[thread_id] = delay; //set the specific wait time for the thread identified by thread_id.
-          pthread_mutex_unlock(&trinco);
+          pthread_mutex_unlock(&read_file);
           break;
         }
         if (delay > 0) {
           printf("Waiting...\n");
+          pthread_mutex_lock(&waitlist_mut);
           for(long int i = 1; i<=args->max_threads;i++){
             args->wait[i] = delay;  // Set the specified wait time for all threads in the waitlist.
           }
-            
+          pthread_mutex_unlock(&waitlist_mut);
         }
-        pthread_mutex_unlock(&trinco);
+        pthread_mutex_unlock(&read_file);
         break;
 
       case CMD_INVALID:
+        pthread_mutex_unlock(&read_file);
         fprintf(stderr, "Invalid command. See HELP for usage\n");
         break;
 
       case CMD_HELP:
+        pthread_mutex_unlock(&read_file);
         printf(
             "Available commands:\n"
             "  CREATE <event_id> <num_rows> <num_columns>\n"
@@ -147,17 +156,17 @@ void *ems_read_command(void *arg){
         break;
 
       case CMD_BARRIER: 
-        pthread_mutex_lock(&trinco);
+        pthread_mutex_lock(&barrier);
         barrier_found = 1;
-        pthread_mutex_unlock(&trinco);
+        pthread_mutex_unlock(&barrier);
+        pthread_mutex_unlock(&read_file);
         return (void*) 1; // Return a special value (1) to signal the barrier
       case CMD_EMPTY:
         break;
 
       case EOC:
-        pthread_mutex_lock(&trinco);
+        pthread_mutex_unlock(&read_file);
         isFileClosed = 1;
-        pthread_mutex_unlock(&trinco);
         break;
     }  
   }
@@ -220,6 +229,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     if (pid == 0){
+      //printf("%s\n", dp->d_name);
       //open input file
       fd = open(jobsPath, O_RDONLY); 
 
