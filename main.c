@@ -16,8 +16,9 @@
 
 //Global Variables
 pthread_mutex_t trinco = PTHREAD_MUTEX_INITIALIZER;
-//pthread_rwlock_t trinco_rw = PTHREAD_RWLOCK_INITIALIZER; 
-int barrier_found = 0;
+// This variable is a flag indicating whether a barrier has been found.
+int barrier_found = 0; 
+// This is an array used to store wait times for individual threads.
 unsigned int* waitlist;
 
 typedef struct {
@@ -46,15 +47,12 @@ void *ems_read_command(void *arg){
       break;
     }
     if (barrier_found){
-      //printf("sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
       pthread_mutex_unlock(&trinco);
-      return (void*) 1;
+      return (void*) 1; // Return a special value (1) to signal the barrier
     }
     pthread_mutex_unlock(&trinco);
 
-    //printf("sou %u vou esperar %u\n", args->tid,args->wait[args->tid]);
     if(delay > 0){
-      //printf("entrei e sou %u vou esperar %u\n", args->tid,delay);
       ems_wait(delay);
       delay = 0;
     }
@@ -111,22 +109,20 @@ void *ems_read_command(void *arg){
         break;
 
       case CMD_WAIT:
-        if (parse_wait(args->input_fd, &delay, &thread_id) == -1) {  // thread_id is not implemented
+        if (parse_wait(args->input_fd, &delay, &thread_id) == -1) { 
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
         pthread_mutex_lock(&trinco);
-        if(thread_id > 0){
-          args->wait[thread_id] = delay;
-          //printf("vou esperar %u na proxima %u\n", args->wait[thread_id], thread_id);
+        if(thread_id > 0){ 
+          args->wait[thread_id] = delay; //set the specific wait time for the thread identified by thread_id.
           pthread_mutex_unlock(&trinco);
           break;
         }
         if (delay > 0) {
           printf("Waiting...\n");
           for(long int i = 1; i<=args->max_threads;i++){
-            args->wait[i] = delay;
-            //printf("vou esperar %u na proxima %lu\n", args->wait[i], i);
+            args->wait[i] = delay;  // Set the specified wait time for all threads in the waitlist.
           }
             
         }
@@ -144,17 +140,17 @@ void *ems_read_command(void *arg){
             "  RESERVE <event_id> [(<x1>,<y1>) (<x2>,<y2>) ...]\n"
             "  SHOW <event_id>\n"
             "  LIST\n"
-            "  WAIT <delay_ms> [thread_id]\n"  // thread_id is not implemented
-            "  BARRIER\n"                      // Not implemented
+            "  WAIT <delay_ms> [thread_id]\n"  
+            "  BARRIER\n"                      
             "  HELP\n");
 
         break;
 
-      case CMD_BARRIER:  // Not implemented
+      case CMD_BARRIER: 
         pthread_mutex_lock(&trinco);
         barrier_found = 1;
         pthread_mutex_unlock(&trinco);
-        return (void*) 1;
+        return (void*) 1; // Return a special value (1) to signal the barrier
       case CMD_EMPTY:
         break;
 
@@ -201,8 +197,9 @@ int main(int argc, char *argv[]) {
       fprintf(stderr,"Opendir failed\n");
       return 1;
   }
+  // Loop through job files in the specified directory
   while((dp = readdir(dirp)) != NULL){
-    int fd, outputFd, openFlags/*, isDone = 0;*/;
+    int fd, outputFd, openFlags;
     mode_t filePerms;
     openFlags = O_CREAT | O_WRONLY | O_TRUNC;
     filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH; 
@@ -223,10 +220,13 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     if (pid == 0){
-      fd = open(jobsPath, O_RDONLY); //open input file
+      //open input file
+      fd = open(jobsPath, O_RDONLY); 
 
+      // Modify the file extension from ".jobs" to ".out" in the file path.
       strcpy(jobsPath + strlen(jobsPath) - strlen(".jobs"), ".out");
 
+      // Open (or creates if it doesn't exist) the output file 
       outputFd = open(jobsPath, openFlags, filePerms);
 
       if (fd == -1){
@@ -240,50 +240,52 @@ int main(int argc, char *argv[]) {
         command_args_t command_args = {.input_fd = fd, .output_fd = outputFd,.tid = i+1,.max_threads = MAX_THREADS, .wait = waitlist};
         args[i] = command_args;
       }
-      //waitlist = (unsigned int*)calloc(MAX_THREADS_INT+1,sizeof(unsigned int));
-      
-      //command_args_t command_args = {.input_fd = fd, .output_fd = outputFd, .wait = waitlist};
+
+      // Handle barrier synchronization
       int barrier_found_local = 1;
       while(barrier_found_local){
-        barrier_found_local = 0;
+        barrier_found_local = 0;// Reset the local variable to initiate a new synchronization
         for (int i = 0; i < MAX_THREADS; i++){
           if(pthread_create(&tid[i], NULL,ems_read_command,(void *)&args[i]) != 0){
             fprintf(stderr, "failed to create thread");
             exit(EXIT_FAILURE);
           }
         }
+        // Wait for threads to finish and check for barrier
         for (int i = 0; i < MAX_THREADS; ++i){
           void* thread;
-          pthread_join(tid[i], &thread);   
+          pthread_join(tid[i], &thread);  
+          // Check if any thread signaled a barrier 
           if (thread == (void*) 1) {
-              barrier_found_local = 1;
+              barrier_found_local = 1;  // Signal the need for a new synchronization
           }
         }
-        /*printf("%d tenho barrier: %d\n",barrier_found_local, barrier_found);*/
-        barrier_found = 0;
+        barrier_found = 0; // Reset the global variable indicating that the barrier has been crossed
       }
-      
+      // Close file descriptors and free memory
       if (close(args->input_fd) == -1 || close(args->output_fd) == -1)
         fprintf(stderr, "Error closing file %lu \n", pthread_self());
+
       free(waitlist);
       exit(EXIT_SUCCESS);
     } 
     else {
       active_process ++;
+      // Check if the maximum number of allowed processes has been reached
       if (active_process >= MAX_PROC){
         int s;
-        wait(&s);
+        wait(&s);// Wait for any child process to exit
         if (WIFEXITED(s)) {
             printf("Child process exited normally with status: %d\n", WEXITSTATUS(s));
         } else {
             printf("Child process did not exit normally.\n");
         }
-        active_process --;
+        active_process --; 
       }
     }
     free(jobsPath);
   }
-  /*não percebi pk que se tem que fazer isto:*/
+  // Wait for remaining child processes to finish
   while (active_process > 0){
     int s;
     wait(&s);
