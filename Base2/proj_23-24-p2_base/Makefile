@@ -1,7 +1,7 @@
 CC = gcc
 SERVER = serverPipe
-REQUEST = request
-RESPONSE = response
+REQUEST = requestPipe
+RESPONSE = responsePipe
 JOBS = /home/pedromacedo/Desktop/SO_Proj/SO_proj-1/Base2/proj_23-24-p2_base/jobs/a.jobs
 # Para mais informações sobre as flags de warning, consulte a informação adicional no lab_ferramentas
 CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L -I. \

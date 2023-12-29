@@ -10,6 +10,11 @@
 #include "common/io.h"
 #include "operations.h"
 
+typedef struct{
+  int req_pipe;
+  int resp_pipe;
+}client_t;
+
 int main(int argc, char* argv[]) {
   if (argc < 2 || argc > 3) {
     fprintf(stderr, "Usage: %s\n <pipe_path> [delay]\n", argv[0]);
@@ -45,12 +50,16 @@ int main(int argc, char* argv[]) {
     unlink(server_name);
     return 1;
   }
+  //Create array to store open sessions
+  client_t prod_cons_buffer[MAX_SESSION_COUNT];
+  int active_sessions = 0;
+
   int exit = 0;
+  
   while (exit == 0) {
     //TODO: Read from pipe
     char msg;
     ssize_t ret = read(fregister, &msg, sizeof(char));
-    printf("%lu\n", ret);
     if (ret < 0) {
       perror("Erro ao ler tipo de mensagem do pipe");
       break;
@@ -58,6 +67,7 @@ int main(int argc, char* argv[]) {
       fprintf(stderr, "[INFO]: pipe closed\n");
       break;
     }
+    
     switch (msg){
       case '1': //setup request
         char req_pipe_path[40];
@@ -67,12 +77,39 @@ int main(int argc, char* argv[]) {
           exit = 1;
           break;
         }
-        printf("%s\n", req_pipe_path);
+        
         if (read(fregister, resp_pipe_path, sizeof(resp_pipe_path)) < 0) {
           perror("Erro ao ler caminho do pipe de resposta");
           exit = 1;
           break;
         }
+        //setup request pipe
+        int frequest;
+        if((frequest = open(req_pipe_path, O_RDONLY)) < 0) {
+          perror("Erro ao abrir o pipe de requests para leitura no servidor");
+          exit = 1;
+          break;
+        }
+        prod_cons_buffer[active_sessions].req_pipe = frequest;
+        //setup response pipe
+        int fresponse;
+        if ((fresponse = open(resp_pipe_path, O_WRONLY)) < 0) {
+          perror("Erro ao abrir o pipe de requests para escrita no servidor");
+          exit = 1;
+          unlink(req_pipe_path);
+          break;
+        }
+        prod_cons_buffer[active_sessions].resp_pipe = fresponse;
+        
+        if (write(fresponse, &active_sessions, sizeof(int)) < 0) {
+          perror("Erro ao enviar a resposta para o client no servidor");
+          exit = 1;
+          unlink(resp_pipe_path);
+          unlink(req_pipe_path);
+          break;
+        }
+        close(frequest);
+        active_sessions ++;
         break;
       
       default:

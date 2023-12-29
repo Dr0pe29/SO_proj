@@ -117,10 +117,9 @@ int main(int argc, char* argv[]) {
       case EOC:
         close(in_fd);
         close(out_fd);
+        ems_quit();
         unlink(argv[1]);
         unlink(argv[2]);
-        unlink(argv[3]);
-        ems_quit();
         return 0;
     }
   }
