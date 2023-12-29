@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "common/constants.h"
 #include "common/io.h"
@@ -34,23 +35,55 @@ int main(int argc, char* argv[]) {
   }
   char* server_name = argv[1];
 
-  int frequests;
+  int fregister;
   unlink(server_name);
   //TODO: Intialize server, create worker threads
-  if (mkfifo(server_name, 0666) < 0) return 1;
-  if((frequests = open(server_name, O_RDONLY)) < 0) {
+  if (mkfifo(server_name, 0777) < 0) return 1;
+
+  if((fregister = open(server_name, O_RDONLY)) < 0) {
     perror("Erro ao abrir o pipe do servidor para leitura");
     unlink(server_name);
     return 1;
   }
-
-  while (1) {
+  int exit = 0;
+  while (exit == 0) {
     //TODO: Read from pipe
+    char msg;
+    ssize_t ret = read(fregister, &msg, sizeof(char));
+    printf("%lu\n", ret);
+    if (ret < 0) {
+      perror("Erro ao ler tipo de mensagem do pipe");
+      break;
+    } else if (ret == 0){// ret == 0 signals EOF
+      fprintf(stderr, "[INFO]: pipe closed\n");
+      break;
+    }
+    switch (msg){
+      case '1': //setup request
+        char req_pipe_path[40];
+        char resp_pipe_path[40];
+        if (read(fregister, req_pipe_path, sizeof(req_pipe_path)) < 0) {
+          perror("Erro ao ler caminho do pipe de solicitacao");
+          exit = 1;
+          break;
+        }
+        printf("%s\n", req_pipe_path);
+        if (read(fregister, resp_pipe_path, sizeof(resp_pipe_path)) < 0) {
+          perror("Erro ao ler caminho do pipe de resposta");
+          exit = 1;
+          break;
+        }
+        break;
+      
+      default:
+        exit = 1;
+        break;
+    }
     //TODO: Write new client to the producer-consumer buffer
   }
 
   //TODO: Close Server
-  close(frequests);
+  close(fregister);
   unlink(server_name);
   ems_terminate();
 }

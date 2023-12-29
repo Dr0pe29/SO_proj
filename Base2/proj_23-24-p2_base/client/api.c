@@ -4,6 +4,8 @@
 #include <fcntl.h>
 #include <string.h>
 
+int session_id;
+
 int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path) {
   //TODO: create pipes and connect to the server
   // Criar request pipe
@@ -30,21 +32,34 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
     return 1;
   }
   //Register request to the server
-
-  char msg[82];
-  msg[0] = '\0'; 
-  strcat(msg, "1");
-  strcat(msg, req_pipe_path);
-  strcat(msg, resp_pipe_path);
   // Send the request string to the server
-  if (write(frequests, msg, strlen(msg) + 1) < 0) {
+  char msg[40];
+  strcpy(msg, "1");
+  if (write(frequests, msg, sizeof(char)) < 0) {
     perror("Erro ao enviar a solicitacao para o servidor");
     close(frequests);
     unlink(req_pipe_path);
     unlink(resp_pipe_path);
     return 1;
   }
-
+  strcpy(msg, req_pipe_path);
+  if (write(frequests, msg, sizeof(msg)) < 0) {
+    perror("Erro ao enviar a solicitacao para o servidor");
+    close(frequests);
+    unlink(req_pipe_path);
+    unlink(resp_pipe_path);
+    return 1;
+  }
+  //printf("%s, %ld\n", msg, sizeof(msg));
+  strcpy(msg, resp_pipe_path);
+  if (write(frequests, msg, sizeof(msg)) < 0) {
+    perror("Erro ao enviar a solicitacao para o servidor");
+    close(frequests);
+    unlink(req_pipe_path);
+    unlink(resp_pipe_path);
+    return 1;
+  }
+  //printf("%s, %d\n", msg, sizeof(msg));
   close(frequests);
 
   return 0;
