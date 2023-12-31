@@ -197,34 +197,55 @@ int ems_show(int out_fd, unsigned int event_id) {
     fprintf(stderr, "Error locking mutex\n");
     return 1;
   }
-
+  unsigned int seat_info[event->rows * event->cols];
   for (size_t i = 1; i <= event->rows; i++) {
     for (size_t j = 1; j <= event->cols; j++) {
-      char buffer[16];
-      sprintf(buffer, "%u", event->data[seat_index(event, i, j)]);
+      /*char buffer[16];
+      sprintf(buffer, "%u", event->data[seat_index(event, i, j)]);*/
 
-      if (print_str(out_fd, buffer)) {
+      seat_info[seat_index(event, i, j)] = event->data[seat_index(event, i, j)];
+
+      /*if (print_str(out_fd, buffer)) {
         perror("Error writing to file descriptor");
         pthread_mutex_unlock(&event->mutex);
         return 1;
-      }
+      }*/
 
-      if (j < event->cols) {
+      /*if (j < event->cols) {
         if (print_str(out_fd, " ")) {
           perror("Error writing to file descriptor");
           pthread_mutex_unlock(&event->mutex);
           return 1;
-        }
-      }
+        }*/
     }
 
-    if (print_str(out_fd, "\n")) {
+    /*if (print_str(out_fd, "\n")) {
       perror("Error writing to file descriptor");
       pthread_mutex_unlock(&event->mutex);
       return 1;
-    }
+    }*/
   }
-
+  int ret_show = 0;
+  if (write(out_fd, &ret_show, sizeof(int)) < 0){
+    perror("Erro ao escrever o output no ems_show");
+    pthread_mutex_unlock(&event->mutex);
+    return 1;
+  }
+  if (write(out_fd, &event->rows, sizeof(size_t)) < 0){
+    perror("Erro ao escrever o row no ems_show");
+    pthread_mutex_unlock(&event->mutex);
+    return 1;
+  }
+  if (write(out_fd, &event->cols, sizeof(size_t)) < 0){
+    perror("Erro ao escrever o col no ems_show");
+    pthread_mutex_unlock(&event->mutex);
+    return 1;
+  }
+  if (write(out_fd, seat_info, sizeof(unsigned int) * event->rows * event->cols) < 0){
+    perror("Erro ao escrever o fd no ems_show");
+    pthread_mutex_unlock(&event->mutex);
+    return 1;
+  }
   pthread_mutex_unlock(&event->mutex);
   return 0;
 }

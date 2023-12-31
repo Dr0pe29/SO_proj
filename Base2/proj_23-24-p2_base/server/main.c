@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
       perror("Erro ao ler tipo de mensagem do pipe");
       break;
     } else if (ret == 0){// ret == 0 signals EOF
-      fprintf(stderr, "[INFO]: pipe closed\n");
+      fprintf(stderr, "[INFO]: register pipe closed\n");
       break;
     }
     
@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
           unlink(req_pipe_path);
           break;
         }
-        close(frequest);
+        
         active_sessions ++;
         break;
       
@@ -117,6 +117,110 @@ int main(int argc, char* argv[]) {
         break;
     }
     //TODO: Write new client to the producer-consumer buffer
+  }
+  //Futura função executada pelas threads
+  int frequest = prod_cons_buffer[0].req_pipe;
+  int fresponse = prod_cons_buffer[0].resp_pipe;
+  exit = 0;
+  while(!exit){
+    char request;
+    unsigned int event_id;
+    int sid;
+    size_t num_rows, num_cols, num_seats;
+    ssize_t red = read(frequest, &request, sizeof(char));
+    if (red < 0) {
+      perror("Erro ao ler o pedido do client no servidor");
+      break;
+    } /*else if (red == 0){
+      fprintf(stderr, "[INFO]: request pipe closed\n");
+      break;
+    }*/
+
+    switch (request) {
+      case '2':
+        int id;
+        if (read(frequest, &id, sizeof(int)) < 0) {
+          perror("Erro ao ler o sessionID no servidor");
+          break;
+        }
+        close(prod_cons_buffer[id].req_pipe);
+        close(prod_cons_buffer[id].resp_pipe);
+        exit = 1;
+        break;
+      case '3':
+        if (read(frequest, &sid, sizeof(int)) < 0) {
+          perror("Erro ao ler o session id no servidor");
+          break;
+        }
+        if (read(frequest, &event_id, sizeof(unsigned int)) < 0) {
+          perror("Erro ao ler o eventID no servidor");
+          break;
+        }
+        if (read(frequest, &num_rows, sizeof(size_t)) < 0) {
+          perror("Erro ao ler o num filas no servidor");
+          break;
+        }
+        if (read(frequest, &num_cols, sizeof(size_t)) < 0) {
+          perror("Erro ao ler o num colunas no servidor");
+          break;
+        }
+        int ret_create = ems_create(event_id, num_rows, num_cols);
+        if (write(fresponse, &ret_create, sizeof(int)) < 0){
+          perror("Erro ao escrever o output do ems_create");
+          break;
+        }
+        break;
+      case '4':
+        size_t *xs, *ys;
+        if (read(frequest, &sid, sizeof(int)) < 0) {
+          perror("Erro ao ler o session id no servidor");
+          break;
+        }
+        if (read(frequest, &event_id, sizeof(unsigned int)) < 0) {
+          perror("Erro ao ler o eventID no servidor");
+          break;
+        }
+        if (read(frequest, &num_seats, sizeof(size_t)) < 0) {
+          perror("Erro ao ler o num lugares no servidor");
+          break;
+        }
+        
+        xs = (size_t *)malloc(num_seats * sizeof(size_t));
+        ys = (size_t *)malloc(num_seats * sizeof(size_t));
+
+        if (read(frequest, xs, num_seats*sizeof(size_t)) < 0) {
+          perror("Erro ao ler o conteudo dos xs no servidor");
+          free(xs);
+          free(ys);
+          break;
+        }
+        if (read(frequest, ys, num_seats*sizeof(size_t)) < 0) {
+          perror("Erro ao ler o conteudo dos ys no servidor");
+          free(xs);
+          free(ys);
+          break;
+        }
+        int ret_reserve = ems_reserve(event_id, num_seats, xs, ys);
+        free(xs);
+        free(ys);
+        if (write(fresponse, &ret_reserve, sizeof(int)) < 0){
+          perror("Erro ao escrever o output do ems_reserve no servidor");
+          break;
+        }
+        break;
+      case '5':
+        if (read(frequest, &sid, sizeof(int)) < 0) {
+          perror("Erro ao ler o session id no servidor");
+          break;
+        }
+        if (read(frequest, &event_id, sizeof(unsigned int)) < 0) {
+          perror("Erro ao ler o eventID no servidor");
+          break;
+        }
+        ems_show(prod_cons_buffer[0].resp_pipe, event_id);
+      default:
+        break;
+      }
   }
 
   //TODO: Close Server
