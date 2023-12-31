@@ -175,13 +175,24 @@ int ems_reserve(unsigned int event_id, size_t num_seats, size_t* xs, size_t* ys)
 }
 
 int ems_show(int out_fd, unsigned int event_id) {
+  int ret_show = 0;
   if (event_list == NULL) {
     fprintf(stderr, "EMS state must be initialized\n");
+    ret_show = 1;
+    if (write(out_fd, &ret_show, sizeof(int)) < 0){
+      perror("Erro ao escrever o output no ems_show");
+      return 1;
+    }
     return 1;
   }
 
   if (pthread_rwlock_rdlock(&event_list->rwl) != 0) {
     fprintf(stderr, "Error locking list rwl\n");
+    ret_show = 1;
+    if (write(out_fd, &ret_show, sizeof(int)) < 0){
+      perror("Erro ao escrever o output no ems_show");
+      return 1;
+    }
     return 1;
   }
 
@@ -191,11 +202,21 @@ int ems_show(int out_fd, unsigned int event_id) {
 
   if (event == NULL) {
     fprintf(stderr, "Event not found\n");
+    ret_show = 1;
+    if (write(out_fd, &ret_show, sizeof(int)) < 0){
+      perror("Erro ao escrever o output no ems_show");
+      return 1;
+    }
     return 1;
   }
 
   if (pthread_mutex_lock(&event->mutex) != 0) {
     fprintf(stderr, "Error locking mutex\n");
+    ret_show = 1;
+    if (write(out_fd, &ret_show, sizeof(int)) < 0){
+      perror("Erro ao escrever o output no ems_show");
+      return 1;
+    }
     return 1;
   }
   unsigned int seat_info[event->rows * event->cols];
@@ -204,7 +225,7 @@ int ems_show(int out_fd, unsigned int event_id) {
       seat_info[seat_index(event, i, j)] = event->data[seat_index(event, i, j)];
     }
   }
-  int ret_show = 0;
+  
   if (write(out_fd, &ret_show, sizeof(int)) < 0){
     perror("Erro ao escrever o output no ems_show");
     pthread_mutex_unlock(&event->mutex);
@@ -230,30 +251,30 @@ int ems_show(int out_fd, unsigned int event_id) {
 }
 
 int ems_list_events(int out_fd) {
+  int ret_list = 0;
   if (event_list == NULL) {
     fprintf(stderr, "EMS state must be initialized\n");
+    ret_list = 1;
+    if (write(out_fd, &ret_list, sizeof(int)) < 0){
+      perror("Erro ao escrever o return 1 no ems_list");
+      return 1;
+    }
     return 1;
   }
 
   if (pthread_rwlock_rdlock(&event_list->rwl) != 0) {
     fprintf(stderr, "Error locking list rwl\n");
+    ret_list = 1;
+    if (write(out_fd, &ret_list, sizeof(int)) < 0){
+      perror("Erro ao escrever o return 1 no ems_list");
+      return 1;
+    }
     return 1;
   }
 
   struct ListNode* to = event_list->tail;
   struct ListNode* current = event_list->head;
 
-  if (current == NULL) {
-    char buff[] = "No events\n";
-    if (print_str(out_fd, buff)) {
-      perror("Error writing to file descriptor");
-      pthread_rwlock_unlock(&event_list->rwl);
-      return 1;
-    }
-
-    pthread_rwlock_unlock(&event_list->rwl);
-    return 0;
-  }
   size_t num_events = 0;
   while (1) {
     num_events++;
@@ -272,7 +293,6 @@ int ems_list_events(int out_fd) {
     }
     current = current->next;
   }
-  int ret_list = 0;
   if (write(out_fd, &ret_list, sizeof(int)) < 0){
     perror("Erro ao escrever o return no ems_list");
     pthread_rwlock_unlock(&event_list->rwl);
