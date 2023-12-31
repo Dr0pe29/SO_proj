@@ -218,6 +218,10 @@ int main(int argc, char* argv[]) {
           break;
         }
         ems_show(prod_cons_buffer[0].resp_pipe, event_id);
+        break;
+      case '6':
+        ems_list_events(prod_cons_buffer[0].resp_pipe);
+        break;
       default:
         break;
       }

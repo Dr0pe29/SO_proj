@@ -7,6 +7,7 @@
 #include "common/io.h"
 #include "eventlist.h"
 
+int num_events = 0;
 static struct EventList* event_list = NULL;
 static unsigned int state_access_delay_us = 0;
 
@@ -109,7 +110,7 @@ int ems_create(unsigned int event_id, size_t num_rows, size_t num_cols) {
     free(event);
     return 1;
   }
-
+  num_events ++;
   pthread_rwlock_unlock(&event_list->rwl);
   return 0;
 }
@@ -200,30 +201,8 @@ int ems_show(int out_fd, unsigned int event_id) {
   unsigned int seat_info[event->rows * event->cols];
   for (size_t i = 1; i <= event->rows; i++) {
     for (size_t j = 1; j <= event->cols; j++) {
-      /*char buffer[16];
-      sprintf(buffer, "%u", event->data[seat_index(event, i, j)]);*/
-
       seat_info[seat_index(event, i, j)] = event->data[seat_index(event, i, j)];
-
-      /*if (print_str(out_fd, buffer)) {
-        perror("Error writing to file descriptor");
-        pthread_mutex_unlock(&event->mutex);
-        return 1;
-      }*/
-
-      /*if (j < event->cols) {
-        if (print_str(out_fd, " ")) {
-          perror("Error writing to file descriptor");
-          pthread_mutex_unlock(&event->mutex);
-          return 1;
-        }*/
     }
-
-    /*if (print_str(out_fd, "\n")) {
-      perror("Error writing to file descriptor");
-      pthread_mutex_unlock(&event->mutex);
-      return 1;
-    }*/
   }
   int ret_show = 0;
   if (write(out_fd, &ret_show, sizeof(int)) < 0){
@@ -275,30 +254,41 @@ int ems_list_events(int out_fd) {
     pthread_rwlock_unlock(&event_list->rwl);
     return 0;
   }
-
+  size_t num_events = 0;
   while (1) {
-    char buff[] = "Event: ";
-    if (print_str(out_fd, buff)) {
-      perror("Error writing to file descriptor");
-      pthread_rwlock_unlock(&event_list->rwl);
-      return 1;
-    }
-
-    char id[16];
-    sprintf(id, "%u\n", (current->event)->id);
-    if (print_str(out_fd, id)) {
-      perror("Error writing to file descriptor");
-      pthread_rwlock_unlock(&event_list->rwl);
-      return 1;
-    }
-
+    num_events++;
+    if (current == to) {
+      break;
+    } 
+    current = current->next;
+  }
+  to = event_list->tail;
+  current = event_list->head;
+  unsigned int event_id_info[num_events];
+  for(size_t i = 0; i < num_events; i++){
+    event_id_info[i] = (current->event)->id;
     if (current == to) {
       break;
     }
-
     current = current->next;
   }
-
+  int ret_list = 0;
+  if (write(out_fd, &ret_list, sizeof(int)) < 0){
+    perror("Erro ao escrever o return no ems_list");
+    pthread_rwlock_unlock(&event_list->rwl);
+    return 1;
+  }
+  if (write(out_fd, &num_events, sizeof(size_t)) < 0){
+    perror("Erro ao escrever o num_events no ems_list");
+    pthread_rwlock_unlock(&event_list->rwl);
+    return 1;
+  }
+  
+  if (write(out_fd, event_id_info, sizeof(unsigned int) * num_events) < 0){
+    perror("Erro ao escrever o fd no ems_list");
+    pthread_rwlock_unlock(&event_list->rwl);
+    return 1;
+  }
   pthread_rwlock_unlock(&event_list->rwl);
   return 0;
 }

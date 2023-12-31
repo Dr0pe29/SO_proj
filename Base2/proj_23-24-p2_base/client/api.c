@@ -11,9 +11,7 @@ int response_pipe;
 int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path) {
   //TODO: create pipes and connect to the server
   // Criar request pipe
-  unlink(req_pipe_path);
-  unlink(resp_pipe_path);
-
+  
   if (mkfifo(req_pipe_path, 0777) < 0){
     perror("Erro ao criar o pipe de solicitacao");
     return 1;
@@ -248,16 +246,39 @@ int ems_show(int out_fd, unsigned int event_id) {
 
 int ems_list_events(int out_fd) {
   //TODO: send list request to the server (through the request pipe) and wait for the response (through the response pipe)
-  /*char msg = '6';
+  char msg = '6';
   if (write(request_pipe , &msg, sizeof(char)) < 0) {
     perror("Erro ao escrever o OP_CODE do list_events para o servidor");
     return 1;
   }
-  int base_return;// nao percebi porque que recebo as colunas linhas ... e o out_fd
+  int base_return;
   if (read(response_pipe, &base_return, sizeof(int)) < 0) {
-    perror("Erro ao ler o retorno da base do reserve no client");
+    perror("Erro ao ler o retorno da base do list_events no client");
     return 1;  
   }
-  return base_return;*/
-  return 1;
+  if(base_return) return 1;
+  size_t num_events;
+  if (read(response_pipe, &num_events, sizeof(size_t)) < 0) {
+    perror("Erro ao ler o num_events do list no client");
+    return 1;  
+  }
+  unsigned int list[num_events];
+  if (read(response_pipe, list, sizeof(unsigned int) * num_events) < 0) {
+    perror("Erro ao ler o output do list no client");
+    return 1;  
+  }
+  for (size_t i = 0; i < num_events; i++){
+    char buff[] = "Event: ";
+    if (write(out_fd, buff, strlen(buff) ) < 0) {
+      perror("Erro ao escrever Event:  do list no output do client");
+      return 1;  
+    }
+    char id[16];
+    sprintf(id, "%u\n", list[i]);
+    if (write(out_fd, id, strlen(id)) < 0) {
+      perror("Erro ao escrever o id_event do list no output do client");
+      return 1;  
+    }
+  }
+  return 0;
 }
