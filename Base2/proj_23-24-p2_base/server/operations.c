@@ -7,7 +7,6 @@
 #include "common/io.h"
 #include "eventlist.h"
 
-int num_events = 0;
 static struct EventList* event_list = NULL;
 static unsigned int state_access_delay_us = 0;
 
@@ -110,7 +109,6 @@ int ems_create(unsigned int event_id, size_t num_rows, size_t num_cols) {
     free(event);
     return 1;
   }
-  num_events ++;
   pthread_rwlock_unlock(&event_list->rwl);
   return 0;
 }

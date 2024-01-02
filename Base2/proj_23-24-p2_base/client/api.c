@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
+#include <unistd.h>
 
 int session_id;
 int request_pipe;
@@ -11,7 +12,9 @@ int response_pipe;
 int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path) {
   //TODO: create pipes and connect to the server
   // Criar request pipe
-  
+  unlink(req_pipe_path);
+  unlink(resp_pipe_path);
+
   if (mkfifo(req_pipe_path, 0777) < 0){
     perror("Erro ao criar o pipe de solicitacao");
     return 1;
@@ -75,7 +78,7 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
     perror("Erro ao abrir o pipe de resposta do client para leitura");
     unlink(req_pipe_path);
     unlink(resp_pipe_path);
-    close(req_pipe_path);
+    close(request_pipe);
     close(fregister);
     return 1;
   }
@@ -83,8 +86,8 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
     perror("Erro ao ler o pipe de resposta do client");
     unlink(req_pipe_path);
     unlink(resp_pipe_path);
-    close(req_pipe_path);
-    close(resp_pipe_path);
+    close(request_pipe);
+    close(response_pipe);
     close(fregister);
     return 1;
   }
@@ -213,14 +216,14 @@ int ems_show(int out_fd, unsigned int event_id) {
 
   unsigned int seats[row*col];
   if (read(response_pipe, seats, sizeof(unsigned int) * row * col) < 0) {
-    perror("Erro ao ler o output do show no client");
+    perror("Erro ao ler o output do show");
     return 1;  
   }
-  int count = 0;
+  size_t count = 0;
   for (size_t i = 0; i < (row*col); i++){
     char buffer[16];
     sprintf(buffer, "%u", seats[i]);
-    if (write(out_fd, buffer, sizeof(char) ) < 0) {
+    if (write(out_fd, buffer, strlen(buffer) ) < 0) {
       perror("Erro ao escrever o conteudo do show no output do client");
       return 1;  
     }
