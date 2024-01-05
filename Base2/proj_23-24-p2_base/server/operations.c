@@ -248,6 +248,39 @@ int ems_show(int out_fd, unsigned int event_id) {
   return 0;
 }
 
+int ems_show_output(unsigned int event_id) {
+  if (event_list == NULL) {
+    fprintf(stderr, "EMS state must be initialized\n");
+    return 1;
+  }
+  if (pthread_rwlock_rdlock(&event_list->rwl) != 0) {
+    fprintf(stderr, "Error locking list rwl\n");
+    return 1;
+  }
+  struct Event* event = get_event_with_delay(event_id, event_list->head, event_list->tail);
+
+  pthread_rwlock_unlock(&event_list->rwl);
+
+  if (event == NULL) {
+    fprintf(stderr, "Event not found\n");
+    return 1;
+  }
+  pthread_mutex_lock(&event->mutex);
+  printf("Event: %u\n", event_id);
+  for (size_t i = 1; i <= event->rows; i++) {
+    for (size_t j = 1; j <= event->cols; j++) {
+      unsigned int seat = event->data[seat_index(event, i, j)];
+      printf("%u", seat);
+      if (j < event->cols) {
+        printf(" ");
+      }
+    }
+    printf("\n");
+  }
+  pthread_mutex_unlock(&event->mutex);
+  return 0;
+}
+
 int ems_list_events(int out_fd) {
   int ret_list = 0;
   if (event_list == NULL) {

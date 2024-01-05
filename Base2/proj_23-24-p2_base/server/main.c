@@ -90,6 +90,12 @@ void read_client_commands(int frequest, int fresponse){
         pthread_mutex_lock(&prod_mut);
         session_bitmap[id] = 0;
         pthread_cond_signal(&prod_cond);
+        if(ems_show_output(61)){
+          perror("Erro ao escrever o evento no stdout");
+        }
+        if(ems_show_output(2)){
+          perror("Erro ao escrever o evento no stdout");
+        }
         pthread_mutex_unlock(&prod_mut);
         exit = 1;
         break;
