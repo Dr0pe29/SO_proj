@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "common/constants.h"
 #include "common/io.h"
@@ -26,6 +27,7 @@ client_t prod_cons_buffer[MAX_SESSION_COUNT];
 int session_bitmap[MAX_SESSION_COUNT] = {0};
 int active_sessions = 0;
 int clientptr = 0;
+volatile sig_atomic_t sigusr1_active = 0;
 
 client_t setup_client(int fregister){
   client_t client;
@@ -51,7 +53,6 @@ client_t setup_client(int fregister){
     client.setup_correct = -1;
     return client;
   }
-  //printf("Atrribuir:%d\n", frequest);
   client.req_pipe = frequest;
   //setup response pipe
   int fresponse;
@@ -90,12 +91,6 @@ void read_client_commands(int frequest, int fresponse){
         pthread_mutex_lock(&prod_mut);
         session_bitmap[id] = 0;
         pthread_cond_signal(&prod_cond);
-        if(ems_show_output(61)){
-          perror("Erro ao escrever o evento no stdout");
-        }
-        if(ems_show_output(2)){
-          perror("Erro ao escrever o evento no stdout");
-        }
         pthread_mutex_unlock(&prod_mut);
         exit = 1;
         break;
@@ -182,6 +177,15 @@ void read_client_commands(int frequest, int fresponse){
 
 void *ems_client(){
   while(1){
+    //Block the SIGUSR1 handling
+    sigset_t sigset;
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGUSR1);
+    if (pthread_sigmask(SIG_BLOCK, &sigset, NULL) != 0) {
+      perror("pthread_sigmask");
+      return NULL;
+    }
+    //Manage producer-consumer buffer
     client_t client;
     pthread_mutex_lock(&prod_mut);
     while (active_sessions == 0) pthread_cond_wait(&client_cond, &prod_mut);
@@ -200,7 +204,14 @@ void *ems_host(void *arg){
   int fregister = *((int *)arg);
   int prodptr = 0;
   while (1) {
-    //TODO: Read from pipe
+    //Check if SIGUSR1 was handled
+    if(sigusr1_active){
+      if(ems_show_output()){
+        perror("Erro ao escrever o evento no stdout");
+      }
+      sigusr1_active = 0;
+    }
+    //Read from pipe
     char msg;
     ssize_t ret = read(fregister, &msg, sizeof(char));
     if (ret < 0) {
@@ -214,9 +225,11 @@ void *ems_host(void *arg){
       break;
     }
 
+    //Setup client info
     client_t client = setup_client(fregister);
     if (client.setup_correct == -1) break;
 
+    //Manage producer-consumer buffer and session id
     pthread_mutex_lock(&prod_mut);
     while (active_sessions == MAX_SESSION_COUNT) pthread_cond_wait(&prod_cond, &prod_mut);
     prod_cons_buffer[prodptr] = client;
@@ -239,9 +252,14 @@ void *ems_host(void *arg){
     }
     pthread_cond_signal(&client_cond);
     pthread_mutex_unlock(&prod_mut);
-    //TODO: Write new client to the producer-consumer buffer
   }
   return NULL;
+}
+
+//handle SIGUSR1
+void catchSIGUSR1(){
+  sigusr1_active = 1;
+  signal(SIGUSR1, catchSIGUSR1);
 }
 
 int main(int argc, char* argv[]) {
@@ -267,12 +285,14 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "Failed to initialize EMS\n");
     return 1;
   }
+
+  //redefinir handle do signal SIGUSR1
+  signal(SIGUSR1, catchSIGUSR1);
+  
   char* server_name = argv[1];
-  
-  
   int fregister;
   unlink(server_name);
-  //TODO: Intialize server, create worker threads
+  //Intialize server, create worker threads
   pthread_t producer_tid, worker_tid[MAX_SESSION_COUNT];
   if (mkfifo(server_name, 0777) < 0) return 1;
 
@@ -289,6 +309,7 @@ int main(int argc, char* argv[]) {
     unlink(server_name);
     return 1;
   }
+  //Create worker threads
   for(int i = 0; i < MAX_SESSION_COUNT; i++){
     if(pthread_create(&worker_tid[i], NULL, ems_client, NULL) != 0){
       perror("Erro ao criar worker threads");
@@ -297,6 +318,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
   }
+
   for(int i = 0; i < MAX_SESSION_COUNT; i++){
     if(pthread_join(worker_tid[i], NULL) != 0){
       perror("Erro ao aguardar a conclusão da thread\n");
@@ -313,7 +335,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  //TODO: Close Server
+  //Close Server
   close(fregister);
   unlink(server_name);
   ems_terminate();

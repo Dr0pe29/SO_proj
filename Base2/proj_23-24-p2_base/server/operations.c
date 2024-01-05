@@ -248,36 +248,63 @@ int ems_show(int out_fd, unsigned int event_id) {
   return 0;
 }
 
-int ems_show_output(unsigned int event_id) {
+int ems_show_output() {
   if (event_list == NULL) {
     fprintf(stderr, "EMS state must be initialized\n");
     return 1;
   }
+
   if (pthread_rwlock_rdlock(&event_list->rwl) != 0) {
     fprintf(stderr, "Error locking list rwl\n");
     return 1;
   }
-  struct Event* event = get_event_with_delay(event_id, event_list->head, event_list->tail);
+  struct ListNode* to = event_list->tail;
+  struct ListNode* current = event_list->head;
+  if (current == NULL) {
+    printf("No events\n");
+    pthread_rwlock_unlock(&event_list->rwl);
+    return 0;
+  }
 
-  pthread_rwlock_unlock(&event_list->rwl);
-
+  struct Event* event = current->event;
   if (event == NULL) {
     fprintf(stderr, "Event not found\n");
+    pthread_rwlock_unlock(&event_list->rwl);
     return 1;
   }
-  pthread_mutex_lock(&event->mutex);
-  printf("Event: %u\n", event_id);
-  for (size_t i = 1; i <= event->rows; i++) {
-    for (size_t j = 1; j <= event->cols; j++) {
-      unsigned int seat = event->data[seat_index(event, i, j)];
-      printf("%u", seat);
-      if (j < event->cols) {
-        printf(" ");
-      }
+  unsigned int event_id;
+  while(1){
+    if (pthread_mutex_lock(&event->mutex) != 0) {
+      fprintf(stderr, "Error locking mutex\n");
+      pthread_rwlock_unlock(&event_list->rwl);
+      return 1;
     }
-    printf("\n");
+    event_id = event->id;
+    printf("Event: %u\n", event_id);
+    for (size_t i = 1; i <= event->rows; i++) {
+      for (size_t j = 1; j <= event->cols; j++) {
+        unsigned int seat = event->data[seat_index(event, i, j)];
+        printf("%u", seat);
+        if (j < event->cols) {
+          printf(" ");
+        }
+      }
+      printf("\n");
+    }
+    if (current == to) {
+      pthread_mutex_unlock(&event->mutex);
+      break;
+    } 
+    pthread_mutex_unlock(&event->mutex);
+    current = current->next;
+    event = current->event; 
+    if (event == NULL) {
+      fprintf(stderr, "Event not found\n");
+      pthread_rwlock_unlock(&event_list->rwl);
+      return 1;
+    }
   }
-  pthread_mutex_unlock(&event->mutex);
+  pthread_rwlock_unlock(&event_list->rwl);
   return 0;
 }
 
@@ -306,6 +333,7 @@ int ems_list_events(int out_fd) {
   struct ListNode* to = event_list->tail;
   struct ListNode* current = event_list->head;
 
+  //Find num_events
   size_t num_events = 0;
   while (1) {
     num_events++;
